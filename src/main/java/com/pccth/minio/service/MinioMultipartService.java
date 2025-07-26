@@ -142,15 +142,10 @@ public class MinioMultipartService {
     }
 
     // Abort multipart upload and cleanup
-    public void abortMultipartUpload(String uploadId) {
+    public void abortMultipartUpload(String objectName, String uploadId) {
         try {
-            MultipartUploadInfo uploadInfo = activeUploads.get(uploadId);
-            if (uploadInfo == null) {
-                return; // Already cleaned up or doesn't exist
-            }
-
             // Clean up any existing part objects
-            cleanupAllPartObjects(uploadInfo.getObjectName(), uploadId);
+            cleanupAllPartObjects(objectName, uploadId);
 
             // Remove from active uploads
             activeUploads.remove(uploadId);

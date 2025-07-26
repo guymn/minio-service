@@ -103,9 +103,10 @@ public class MinioMultipartController {
      */
     @DeleteMapping("/abort")
     public ResponseEntity<Response<Map<String, String>>> abortUpload(
+            @RequestParam String objectName,
             @RequestParam String uploadId) {
         try {
-            multipartService.abortMultipartUpload(uploadId);
+            multipartService.abortMultipartUpload(objectName, uploadId);
 
             Map<String, String> result = new HashMap<>();
             result.put("message", "Multipart upload aborted successfully");
