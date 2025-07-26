@@ -1,0 +1,21 @@
+server:
+  port: 8000
+
+spring:
+  application:
+    name: "minio-service"
+  data:
+    mongodb:
+      uri: mongodb://localhost:27017/file
+      auto-index-creation: true
+  servlet:
+    multipart:
+      max-file-size: 50000MB
+      max-request-size: 50000MB
+
+# Minio Config
+minio:
+  url: http://localhost:9000
+  access-key: minioadmin
+  secret-key: minioadmin123
+  bucket-name: mybucket

@@ -1,0 +1,213 @@
+package com.pccth.minio.service;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.model.InitiateMultipartUploadRequest;
+import com.amazonaws.services.s3.model.InitiateMultipartUploadResult;
+import com.pccth.minio.dto.CompleteUploadRequest;
+import com.pccth.minio.dto.MultipartUploadInfo;
+import com.pccth.minio.dto.MultipartUploadResponse;
+import com.pccth.minio.dto.PartInfo;
+import com.pccth.minio.dto.PartPresignedUrl;
+
+import io.minio.ComposeObjectArgs;
+import io.minio.ComposeSource;
+import io.minio.GetPresignedObjectUrlArgs;
+import io.minio.ListObjectsArgs;
+import io.minio.MinioClient;
+import io.minio.ObjectWriteResponse;
+import io.minio.RemoveObjectArgs;
+import io.minio.Result;
+import io.minio.http.Method;
+import io.minio.messages.Item;
+import lombok.RequiredArgsConstructor;
+
+@Service
+@RequiredArgsConstructor
+@Transactional
+public class MinioMultipartService {
+    private final MinioClient minioClient;
+    private final AmazonS3 amazonS3Client;
+    private final Map<String, MultipartUploadInfo> activeUploads = new ConcurrentHashMap<>();
+
+    @Value("${minio.bucket-name}")
+    private String BUCKET_NAME;
+
+    // Initiate multipart upload and return upload ID
+    public MultipartUploadResponse initiateMultipartUpload(String objectName,
+            String contentType) {
+        try {
+            // Generate a unique upload ID
+            InitiateMultipartUploadResult result = amazonS3Client
+                    .initiateMultipartUpload(new InitiateMultipartUploadRequest(
+                            BUCKET_NAME,
+                            objectName));
+
+            MultipartUploadInfo uploadInfo = new MultipartUploadInfo(
+                    BUCKET_NAME, objectName, contentType, null, System.currentTimeMillis());
+
+            activeUploads.put(result.getUploadId(), uploadInfo);
+
+            return new MultipartUploadResponse(result.getUploadId(), objectName);
+
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to initiate multipart upload", e);
+        }
+    }
+
+    // Generate presigned URL for uploading a specific part
+    public String generatePresignedUrlForPart(String objectName,
+            String uploadId, int partNumber) {
+        try {
+            // Create a unique object name for this part
+            String partObjectName = generatePartObjectName(objectName, uploadId, partNumber);
+
+            return minioClient.getPresignedObjectUrl(
+                    GetPresignedObjectUrlArgs.builder()
+                            .method(Method.PUT)
+                            .bucket(BUCKET_NAME)
+                            .object(partObjectName)
+                            .expiry(1, TimeUnit.HOURS)
+                            .build());
+
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to generate presigned URL for part", e);
+        }
+    }
+
+    // Generate multiple presigned URLs for parts
+    public List<PartPresignedUrl> generatePresignedUrlsForParts(String objectName,
+            String uploadId, int totalParts) {
+        List<PartPresignedUrl> urls = new ArrayList<>();
+
+        for (int partNumber = 1; partNumber <= totalParts; partNumber++) {
+            String presignedUrl = generatePresignedUrlForPart(objectName, uploadId, partNumber);
+            urls.add(new PartPresignedUrl(partNumber, presignedUrl));
+        }
+
+        return urls;
+    }
+
+    // Complete multipart upload by composing all parts
+    public ObjectWriteResponse completeMultipartUpload(CompleteUploadRequest request) {
+        try {
+            MultipartUploadInfo uploadInfo = activeUploads.get(request.getUploadId());
+            if (uploadInfo == null) {
+                throw new RuntimeException("Upload ID not found: " + request.getUploadId());
+            }
+
+            // Sort parts by part number
+            request.getParts().sort(Comparator.comparing(PartInfo::getPartNumber));
+
+            // Create compose sources from uploaded parts
+            List<ComposeSource> sources = new ArrayList<>();
+            for (PartInfo part : request.getParts()) {
+                String partObjectName = generatePartObjectName(request.getObjectName(), request.getUploadId(),
+                        part.getPartNumber());
+                sources.add(
+                        ComposeSource.builder()
+                                .bucket(BUCKET_NAME)
+                                .object(partObjectName)
+                                .build());
+            }
+
+            ObjectWriteResponse response = minioClient.composeObject(
+                    ComposeObjectArgs.builder()
+                            .bucket(BUCKET_NAME)
+                            .object(request.getObjectName())
+                            .sources(sources)
+                            .build());
+
+            // Clean up part objects
+            cleanupPartObjects(request.getObjectName(), request.getUploadId(), request.getParts());
+
+            // Remove from active uploads
+            activeUploads.remove(request.getUploadId());
+
+            return response;
+
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to complete multipart upload", e);
+        }
+    }
+
+    // Abort multipart upload and cleanup
+    public void abortMultipartUpload(String uploadId) {
+        try {
+            MultipartUploadInfo uploadInfo = activeUploads.get(uploadId);
+            if (uploadInfo == null) {
+                return; // Already cleaned up or doesn't exist
+            }
+
+            // Clean up any existing part objects
+            cleanupAllPartObjects(uploadInfo.getObjectName(), uploadId);
+
+            // Remove from active uploads
+            activeUploads.remove(uploadId);
+
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to abort multipart upload", e);
+        }
+    }
+
+    public MultipartUploadInfo getUploadInfo(String uploadId) {
+        return activeUploads.get(uploadId);
+    }
+
+    public List<MultipartUploadInfo> listActiveUploads() {
+        return new ArrayList<>(activeUploads.values());
+    }
+
+    private String generatePartObjectName(String objectName, String uploadId, int partNumber) {
+        return String.format(".multipart-%s/%s/part-%05d", uploadId, objectName, partNumber);
+    }
+
+    private void cleanupPartObjects(String objectName, String uploadId, List<PartInfo> parts) {
+        for (PartInfo part : parts) {
+            try {
+                String partObjectName = generatePartObjectName(objectName, uploadId, part.getPartNumber());
+                minioClient.removeObject(
+                        RemoveObjectArgs.builder()
+                                .bucket(BUCKET_NAME)
+                                .object(partObjectName)
+                                .build());
+            } catch (Exception e) {
+                // Log error but don't fail the operation
+                System.err.println("Failed to cleanup part object: " + e.getMessage());
+            }
+        }
+    }
+
+    private void cleanupAllPartObjects(String objectName, String uploadId) {
+        try {
+            String prefix = String.format(".multipart-%s/%s/", uploadId, objectName);
+
+            Iterable<Result<Item>> objects = minioClient.listObjects(
+                    ListObjectsArgs.builder()
+                            .bucket(BUCKET_NAME)
+                            .prefix(prefix)
+                            .build());
+
+            for (Result<Item> result : objects) {
+                Item item = result.get();
+                minioClient.removeObject(
+                        RemoveObjectArgs.builder()
+                                .bucket(BUCKET_NAME)
+                                .object(item.objectName())
+                                .build());
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to cleanup part objects: " + e.getMessage());
+        }
+    }
+}
