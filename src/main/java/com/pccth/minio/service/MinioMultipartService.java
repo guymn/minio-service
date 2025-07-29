@@ -14,7 +14,13 @@ import org.springframework.transaction.annotation.Transactional;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.model.InitiateMultipartUploadRequest;
 import com.amazonaws.services.s3.model.InitiateMultipartUploadResult;
+import com.amazonaws.services.s3.model.ListVersionsRequest;
+import com.amazonaws.services.s3.model.ObjectListing;
+import com.amazonaws.services.s3.model.S3ObjectSummary;
+import com.amazonaws.services.s3.model.S3VersionSummary;
+import com.amazonaws.services.s3.model.VersionListing;
 import com.pccth.minio.dto.CompleteUploadRequest;
+import com.pccth.minio.dto.FileVersionInfo;
 import com.pccth.minio.dto.MultipartUploadInfo;
 import com.pccth.minio.dto.MultipartUploadResponse;
 import com.pccth.minio.dto.PartInfo;
@@ -128,8 +134,8 @@ public class MinioMultipartService {
                             .sources(sources)
                             .build());
 
-            // Clean up part objects
-            cleanupPartObjects(request.getObjectName(), request.getUploadId(), request.getParts());
+            // Clean up part objects and all version
+            cleanupPartObjectsAllVersion(request.getObjectName(), request.getUploadId(), request.getParts());
 
             // Remove from active uploads
             activeUploads.remove(request.getUploadId());
@@ -145,7 +151,8 @@ public class MinioMultipartService {
     public void abortMultipartUpload(String objectName, String uploadId) {
         try {
             // Clean up any existing part objects
-            cleanupAllPartObjects(objectName, uploadId);
+            // cleanupAllPartObjects(objectName, uploadId);
+            cleanupAllPartObjectsAllVersion(objectName, uploadId);
 
             // Remove from active uploads
             activeUploads.remove(uploadId);
@@ -167,6 +174,8 @@ public class MinioMultipartService {
         return String.format(".multipart-%s/%s/part-%05d", uploadId, objectName, partNumber);
     }
 
+    // การลบ object part (removeObject) จะไม่ลบจริง แต่จะใส่ Delete Marker Storage
+    // ของคุณยังเก็บทุก part (version เก่า) → เปลืองเนื้อที่
     private void cleanupPartObjects(String objectName, String uploadId, List<PartInfo> parts) {
         for (PartInfo part : parts) {
             try {
@@ -183,6 +192,8 @@ public class MinioMultipartService {
         }
     }
 
+    // การลบ object part (removeObject) จะไม่ลบจริง แต่จะใส่ Delete Marker Storage
+    // ของคุณยังเก็บทุก part (version เก่า) → เปลืองเนื้อที่
     private void cleanupAllPartObjects(String objectName, String uploadId) {
         try {
             String prefix = String.format(".multipart-%s/%s/", uploadId, objectName);
@@ -204,5 +215,92 @@ public class MinioMultipartService {
         } catch (Exception e) {
             System.err.println("Failed to cleanup part objects: " + e.getMessage());
         }
+    }
+
+    private void cleanupAllPartObjectsAllVersion(String objectName, String uploadId) {
+        try {
+            String prefix = String.format(".multipart-%s/%s/", uploadId, objectName);
+
+            // 1. ดึง version ทั้งหมดของ prefix นั้น
+            ListVersionsRequest listVersionsRequest = new ListVersionsRequest()
+                    .withBucketName(BUCKET_NAME)
+                    .withPrefix(prefix);
+
+            VersionListing versionListing = amazonS3Client.listVersions(listVersionsRequest);
+
+            for (S3VersionSummary version : versionListing.getVersionSummaries()) {
+                amazonS3Client.deleteVersion(
+                        version.getBucketName(),
+                        version.getKey(),
+                        version.getVersionId());
+            }
+
+        } catch (Exception e) {
+            System.err.println("Failed to cleanup part object versions: " + e.getMessage());
+        }
+    }
+
+    private void cleanupPartObjectsAllVersion(String objectName, String uploadId, List<PartInfo> parts) {
+        for (PartInfo part : parts) {
+            try {
+                String partObjectName = generatePartObjectName(objectName, uploadId, part.getPartNumber());
+                // ดึง version ทั้งหมดของ part object
+                ListVersionsRequest request = new ListVersionsRequest()
+                        .withBucketName(BUCKET_NAME)
+                        .withPrefix(partObjectName);
+
+                VersionListing listing = amazonS3Client.listVersions(request);
+                for (S3VersionSummary version : listing.getVersionSummaries()) {
+                    if (version.getKey().equals(partObjectName)) {
+                        amazonS3Client.deleteVersion(BUCKET_NAME, partObjectName, version.getVersionId());
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("Failed to cleanup part object: " + e.getMessage());
+            }
+        }
+    }
+
+    public List<FileVersionInfo> listObjectVersions(String objectKey) {
+        ListVersionsRequest request = new ListVersionsRequest()
+                .withBucketName(BUCKET_NAME)
+                .withPrefix(objectKey);
+
+        VersionListing listing = amazonS3Client.listVersions(request);
+
+        List<FileVersionInfo> versions = new ArrayList<>();
+        for (S3VersionSummary versionSummary : listing.getVersionSummaries()) {
+            versions.add(new FileVersionInfo(
+                    versionSummary.getKey(),
+                    versionSummary.getSize(),
+                    versionSummary.getVersionId(),
+                    versionSummary.isLatest(),
+                    versionSummary.getLastModified()));
+        }
+
+        return versions;
+    }
+
+    public List<FileVersionInfo> listAllFiles() {
+        List<FileVersionInfo> files = new ArrayList<>();
+        ObjectListing listing = amazonS3Client.listObjects(BUCKET_NAME);
+
+        // loop until all objects are listed
+        while (true) {
+            for (S3ObjectSummary summary : listing.getObjectSummaries()) {
+                files.add(new FileVersionInfo(
+                        summary.getKey(),
+                        summary.getSize(), null, true,
+                        summary.getLastModified()));
+            }
+
+            if (listing.isTruncated()) {
+                listing = amazonS3Client.listNextBatchOfObjects(listing);
+            } else {
+                break;
+            }
+        }
+
+        return files;
     }
 }
