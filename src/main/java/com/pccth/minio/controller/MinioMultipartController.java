@@ -16,7 +16,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.pccth.minio.dto.CompleteUploadRequest;
-import com.pccth.minio.dto.FileVersionInfo;
 import com.pccth.minio.dto.MultipartUploadInfo;
 import com.pccth.minio.dto.MultipartUploadResponse;
 import com.pccth.minio.dto.PartPresignedUrl;
@@ -150,15 +149,4 @@ public class MinioMultipartController {
         }
     }
 
-    @GetMapping("/getAll")
-    public ResponseEntity<Response<List<FileVersionInfo>>> getList() {
-
-        try {
-            List<FileVersionInfo> uploadInfo = multipartService.listObjectVersions("");
-
-            return Response.ok(uploadInfo);
-        } catch (Exception e) {
-            return Response.withStatusAndMessage(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage());
-        }
-    }
 }

@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
@@ -15,12 +16,9 @@ import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.model.InitiateMultipartUploadRequest;
 import com.amazonaws.services.s3.model.InitiateMultipartUploadResult;
 import com.amazonaws.services.s3.model.ListVersionsRequest;
-import com.amazonaws.services.s3.model.ObjectListing;
-import com.amazonaws.services.s3.model.S3ObjectSummary;
 import com.amazonaws.services.s3.model.S3VersionSummary;
 import com.amazonaws.services.s3.model.VersionListing;
 import com.pccth.minio.dto.CompleteUploadRequest;
-import com.pccth.minio.dto.FileVersionInfo;
 import com.pccth.minio.dto.MultipartUploadInfo;
 import com.pccth.minio.dto.MultipartUploadResponse;
 import com.pccth.minio.dto.PartInfo;
@@ -65,7 +63,6 @@ public class MinioMultipartService {
             activeUploads.put(result.getUploadId(), uploadInfo);
 
             return new MultipartUploadResponse(result.getUploadId(), objectName);
-
         } catch (Exception e) {
             throw new RuntimeException("Failed to initiate multipart upload", e);
         }
@@ -261,46 +258,4 @@ public class MinioMultipartService {
         }
     }
 
-    public List<FileVersionInfo> listObjectVersions(String objectKey) {
-        ListVersionsRequest request = new ListVersionsRequest()
-                .withBucketName(BUCKET_NAME)
-                .withPrefix(objectKey);
-
-        VersionListing listing = amazonS3Client.listVersions(request);
-
-        List<FileVersionInfo> versions = new ArrayList<>();
-        for (S3VersionSummary versionSummary : listing.getVersionSummaries()) {
-            versions.add(new FileVersionInfo(
-                    versionSummary.getKey(),
-                    versionSummary.getSize(),
-                    versionSummary.getVersionId(),
-                    versionSummary.isLatest(),
-                    versionSummary.getLastModified()));
-        }
-
-        return versions;
-    }
-
-    public List<FileVersionInfo> listAllFiles() {
-        List<FileVersionInfo> files = new ArrayList<>();
-        ObjectListing listing = amazonS3Client.listObjects(BUCKET_NAME);
-
-        // loop until all objects are listed
-        while (true) {
-            for (S3ObjectSummary summary : listing.getObjectSummaries()) {
-                files.add(new FileVersionInfo(
-                        summary.getKey(),
-                        summary.getSize(), null, true,
-                        summary.getLastModified()));
-            }
-
-            if (listing.isTruncated()) {
-                listing = amazonS3Client.listNextBatchOfObjects(listing);
-            } else {
-                break;
-            }
-        }
-
-        return files;
-    }
 }
