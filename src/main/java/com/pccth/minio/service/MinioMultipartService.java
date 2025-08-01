@@ -73,7 +73,7 @@ public class MinioMultipartService {
             String uploadId, int partNumber) {
         try {
             // Create a unique object name for this part
-            String partObjectName = generatePartObjectName(objectName, uploadId, partNumber);
+            String partObjectName = generatePartObjectNameForTemp(objectName, uploadId, partNumber);
 
             return minioClient.getPresignedObjectUrl(
                     GetPresignedObjectUrlArgs.builder()
@@ -115,7 +115,7 @@ public class MinioMultipartService {
             // Create compose sources from uploaded parts
             List<ComposeSource> sources = new ArrayList<>();
             for (PartInfo part : request.getParts()) {
-                String partObjectName = generatePartObjectName(request.getObjectName(), request.getUploadId(),
+                String partObjectName = generatePartObjectNameForTemp(request.getObjectName(), request.getUploadId(),
                         part.getPartNumber());
                 sources.add(
                         ComposeSource.builder()
@@ -167,8 +167,8 @@ public class MinioMultipartService {
         return new ArrayList<>(activeUploads.values());
     }
 
-    private String generatePartObjectName(String objectName, String uploadId, int partNumber) {
-        return String.format(".multipart-%s/%s/part-%05d", uploadId, objectName, partNumber);
+    private String generatePartObjectNameForTemp(String objectName, String uploadId, int partNumber) {
+        return String.format(".temp/.multipart-%s/%s/part-%05d", uploadId, objectName, partNumber);
     }
 
     // การลบ object part (removeObject) จะไม่ลบจริง แต่จะใส่ Delete Marker Storage
@@ -176,7 +176,7 @@ public class MinioMultipartService {
     private void cleanupPartObjects(String objectName, String uploadId, List<PartInfo> parts) {
         for (PartInfo part : parts) {
             try {
-                String partObjectName = generatePartObjectName(objectName, uploadId, part.getPartNumber());
+                String partObjectName = generatePartObjectNameForTemp(objectName, uploadId, part.getPartNumber());
                 minioClient.removeObject(
                         RemoveObjectArgs.builder()
                                 .bucket(BUCKET_NAME)
@@ -240,7 +240,7 @@ public class MinioMultipartService {
     private void cleanupPartObjectsAllVersion(String objectName, String uploadId, List<PartInfo> parts) {
         for (PartInfo part : parts) {
             try {
-                String partObjectName = generatePartObjectName(objectName, uploadId, part.getPartNumber());
+                String partObjectName = generatePartObjectNameForTemp(objectName, uploadId, part.getPartNumber());
                 // ดึง version ทั้งหมดของ part object
                 ListVersionsRequest request = new ListVersionsRequest()
                         .withBucketName(BUCKET_NAME)
