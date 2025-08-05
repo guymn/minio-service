@@ -3,9 +3,6 @@ package com.pccth.minio.service;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -19,7 +16,6 @@ import com.amazonaws.services.s3.model.ListVersionsRequest;
 import com.amazonaws.services.s3.model.S3VersionSummary;
 import com.amazonaws.services.s3.model.VersionListing;
 import com.pccth.minio.dto.CompleteUploadRequest;
-import com.pccth.minio.dto.MultipartUploadInfo;
 import com.pccth.minio.dto.MultipartUploadResponse;
 import com.pccth.minio.dto.PartInfo;
 import com.pccth.minio.dto.PartPresignedUrl;
@@ -42,7 +38,6 @@ import lombok.RequiredArgsConstructor;
 public class MinioMultipartService {
     private final MinioClient minioClient;
     private final AmazonS3 amazonS3Client;
-    private final Map<String, MultipartUploadInfo> activeUploads = new ConcurrentHashMap<>();
 
     @Value("${minio.bucket-name}")
     private String BUCKET_NAME;
@@ -56,11 +51,6 @@ public class MinioMultipartService {
                     .initiateMultipartUpload(new InitiateMultipartUploadRequest(
                             BUCKET_NAME,
                             objectName));
-
-            MultipartUploadInfo uploadInfo = new MultipartUploadInfo(
-                    BUCKET_NAME, objectName, contentType, null, System.currentTimeMillis());
-
-            activeUploads.put(result.getUploadId(), uploadInfo);
 
             return new MultipartUploadResponse(result.getUploadId(), objectName);
         } catch (Exception e) {
@@ -104,11 +94,6 @@ public class MinioMultipartService {
     // Complete multipart upload by composing all parts
     public ObjectWriteResponse completeMultipartUpload(CompleteUploadRequest request) {
         try {
-            MultipartUploadInfo uploadInfo = activeUploads.get(request.getUploadId());
-            if (uploadInfo == null) {
-                throw new RuntimeException("Upload ID not found: " + request.getUploadId());
-            }
-
             // Sort parts by part number
             request.getParts().sort(Comparator.comparing(PartInfo::getPartNumber));
 
@@ -134,9 +119,6 @@ public class MinioMultipartService {
             // Clean up part objects and all version
             cleanupPartObjectsAllVersion(request.getObjectName(), request.getUploadId(), request.getParts());
 
-            // Remove from active uploads
-            activeUploads.remove(request.getUploadId());
-
             return response;
 
         } catch (Exception e) {
@@ -147,24 +129,10 @@ public class MinioMultipartService {
     // Abort multipart upload and cleanup
     public void abortMultipartUpload(String objectName, String uploadId) {
         try {
-            // Clean up any existing part objects
-            // cleanupAllPartObjects(objectName, uploadId);
             cleanupAllPartObjectsAllVersion(objectName, uploadId);
-
-            // Remove from active uploads
-            activeUploads.remove(uploadId);
-
         } catch (Exception e) {
             throw new RuntimeException("Failed to abort multipart upload", e);
         }
-    }
-
-    public MultipartUploadInfo getUploadInfo(String uploadId) {
-        return activeUploads.get(uploadId);
-    }
-
-    public List<MultipartUploadInfo> listActiveUploads() {
-        return new ArrayList<>(activeUploads.values());
     }
 
     private String generatePartObjectNameForTemp(String objectName, String uploadId, int partNumber) {

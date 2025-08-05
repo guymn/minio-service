@@ -16,7 +16,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.pccth.minio.dto.CompleteUploadRequest;
-import com.pccth.minio.dto.MultipartUploadInfo;
 import com.pccth.minio.dto.MultipartUploadResponse;
 import com.pccth.minio.dto.PartPresignedUrl;
 import com.pccth.minio.dto.Response;
@@ -112,38 +111,6 @@ public class MinioMultipartController {
             result.put("message", "Multipart upload aborted successfully");
             result.put("uploadId", uploadId);
             return Response.ok(result);
-        } catch (Exception e) {
-            return Response.withStatusAndMessage(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage());
-        }
-    }
-
-    /**
-     * Get upload information
-     */
-    @GetMapping("/info")
-    public ResponseEntity<Response<MultipartUploadInfo>> getUploadInfo(@RequestParam String uploadId) {
-
-        try {
-            MultipartUploadInfo uploadInfo = multipartService.getUploadInfo(uploadId);
-
-            if (uploadInfo == null) {
-                return ResponseEntity.notFound().build();
-            }
-            return Response.ok(uploadInfo);
-        } catch (Exception e) {
-            return Response.withStatusAndMessage(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage());
-        }
-    }
-
-    /**
-     * List active uploads
-     */
-    @GetMapping("/active")
-    public ResponseEntity<Response<List<MultipartUploadInfo>>> listActiveUploads() {
-
-        try {
-            List<MultipartUploadInfo> activeUploads = multipartService.listActiveUploads();
-            return Response.ok(activeUploads);
         } catch (Exception e) {
             return Response.withStatusAndMessage(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage());
         }
