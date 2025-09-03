@@ -4,10 +4,7 @@ server:
 spring:
   application:
     name: "minio-service"
-  data:
-    mongodb:
-      uri: mongodb://localhost:27017/file
-      auto-index-creation: true
+
   servlet:
     multipart:
       max-file-size: 50000MB
