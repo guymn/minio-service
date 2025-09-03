@@ -3,11 +3,14 @@ package com.pccth.minio.service;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.model.ListObjectsV2Request;
+import com.amazonaws.services.s3.model.ListObjectsV2Result;
 import com.amazonaws.services.s3.model.ListVersionsRequest;
 import com.amazonaws.services.s3.model.ObjectListing;
 import com.amazonaws.services.s3.model.S3ObjectSummary;
@@ -48,6 +51,7 @@ public class MinioService {
         }
     }
 
+    // ดึงทุก version
     public List<FileVersionInfo> listObjectVersions(String objectKey) {
         ListVersionsRequest request = new ListVersionsRequest()
                 .withBucketName(BUCKET_NAME)
@@ -66,6 +70,23 @@ public class MinioService {
         }
 
         return versions;
+    }
+
+    // ดึงแค่ version ล่าสุด
+    public List<FileVersionInfo> listLatestObjectVersions(String objectKey) {
+        ListObjectsV2Request request = new ListObjectsV2Request()
+                .withBucketName(BUCKET_NAME)
+                .withPrefix(objectKey);
+
+        ListObjectsV2Result result = amazonS3Client.listObjectsV2(request);
+        return result.getObjectSummaries().stream()
+                .map(obj -> new FileVersionInfo(
+                        obj.getKey(),
+                        obj.getSize(),
+                        null, // ไม่มี versionId เพราะ listObjectsV2 ไม่ได้คืน versionId
+                        true,
+                        obj.getLastModified()))
+                .collect(Collectors.toList());
     }
 
     public List<FileVersionInfo> listAllFiles() {

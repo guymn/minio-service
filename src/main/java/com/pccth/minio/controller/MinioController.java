@@ -32,7 +32,7 @@ public class MinioController {
     @GetMapping("/list")
     public ResponseEntity<Response<List<FileVersionInfo>>> getList(@RequestParam String objectKey) {
         try {
-            List<FileVersionInfo> uploadInfo = multipartService.listObjectVersions(objectKey);
+            List<FileVersionInfo> uploadInfo = multipartService.listLatestObjectVersions(objectKey);
 
             return Response.ok(uploadInfo);
         } catch (Exception e) {
