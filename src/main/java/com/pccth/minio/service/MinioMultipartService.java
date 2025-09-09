@@ -16,7 +16,10 @@ import com.amazonaws.services.s3.model.ListVersionsRequest;
 import com.amazonaws.services.s3.model.S3VersionSummary;
 import com.amazonaws.services.s3.model.VersionListing;
 import com.pccth.minio.dto.CompleteUploadRequest;
-import com.pccth.minio.dto.MultipartUploadResponse;
+import com.pccth.minio.dto.FileInfoDto;
+import com.pccth.minio.dto.InitiatePresignedRequest;
+import com.pccth.minio.dto.InitiateGroupResponse;
+import com.pccth.minio.dto.InitiateUploadInfo;
 import com.pccth.minio.dto.PartInfo;
 import com.pccth.minio.dto.PartPresignedUrl;
 
@@ -43,16 +46,15 @@ public class MinioMultipartService {
     private String BUCKET_NAME;
 
     // Initiate multipart upload and return upload ID
-    public MultipartUploadResponse initiateMultipartUpload(String objectName,
-            String contentType) {
+    public InitiateUploadInfo initiateMultipartUpload(String objectName, String bucketName) {
         try {
             // Generate a unique upload ID
             InitiateMultipartUploadResult result = amazonS3Client
                     .initiateMultipartUpload(new InitiateMultipartUploadRequest(
-                            BUCKET_NAME,
+                            bucketName,
                             objectName));
 
-            return new MultipartUploadResponse(result.getUploadId(), objectName);
+            return new InitiateUploadInfo(result.getUploadId(), objectName, new ArrayList<>());
         } catch (Exception e) {
             throw new RuntimeException("Failed to initiate multipart upload", e);
         }
@@ -80,7 +82,7 @@ public class MinioMultipartService {
 
     // Generate multiple presigned URLs for parts
     public List<PartPresignedUrl> generatePresignedUrlsForParts(String objectName,
-            String uploadId, int totalParts) {
+            String uploadId, Integer totalParts) {
         List<PartPresignedUrl> urls = new ArrayList<>();
 
         for (int partNumber = 1; partNumber <= totalParts; partNumber++) {
@@ -224,6 +226,29 @@ public class MinioMultipartService {
                 System.err.println("Failed to cleanup part object: " + e.getMessage());
             }
         }
+    }
+
+    public InitiateGroupResponse initiatePresignedUrl(InitiatePresignedRequest request) {
+        List<FileInfoDto> fileList = request.getFileList();
+        InitiateGroupResponse responses = new InitiateGroupResponse("id", new ArrayList<>());
+
+        for (int i = 0; i < fileList.size(); i++) {
+            FileInfoDto fileInfo = fileList.get(i);
+            // เอา uploadId
+            InitiateUploadInfo uploadInfo = initiateMultipartUpload(fileInfo.getFileName(), fileInfo.getBucketName());
+
+            // เอา presigned url ของแต่ละ part
+            List<PartPresignedUrl> parts = generatePresignedUrlsForParts(uploadInfo.getObjectName(),
+                    uploadInfo.getUploadId(), fileInfo.getCountPart());
+
+            // เอา partList ที่ได้มาลง uploadInfo
+            uploadInfo.setPresignedUrlList(parts);
+
+            // add uploadInfo ลง group
+            responses.getInitiateUploadList().add(i, uploadInfo);
+        }
+
+        return responses;
     }
 
 }

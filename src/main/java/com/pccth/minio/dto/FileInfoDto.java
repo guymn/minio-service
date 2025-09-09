@@ -9,7 +9,9 @@ import lombok.Setter;
 @Setter
 @RequiredArgsConstructor
 @AllArgsConstructor
-public class MultipartUploadResponse {
-    private String uploadId;
-     private String objectName;
+public class FileInfoDto {
+    private String fileName;
+    private String bucketName;
+    private String contentType;
+    private Integer countPart;
 }

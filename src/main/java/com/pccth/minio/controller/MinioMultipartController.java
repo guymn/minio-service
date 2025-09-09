@@ -8,14 +8,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
- import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.pccth.minio.dto.CompleteUploadRequest;
-import com.pccth.minio.dto.MultipartUploadResponse;
+import com.pccth.minio.dto.InitiatePresignedRequest;
+import com.pccth.minio.dto.InitiateGroupResponse;
+import com.pccth.minio.dto.InitiateUploadInfo;
 import com.pccth.minio.dto.PartPresignedUrl;
 import com.pccth.minio.dto.Response;
 import com.pccth.minio.service.MinioMultipartService;
@@ -29,7 +31,7 @@ public class MinioMultipartController {
     private MinioMultipartService multipartService;
 
     @PostMapping("/initiate")
-    public ResponseEntity<Response<MultipartUploadResponse>> initiateUpload(
+    public ResponseEntity<Response<InitiateUploadInfo>> initiateUpload(
             @RequestParam String objectName,
             @RequestParam(defaultValue = "application/octet-stream") String contentType) {
         try {
@@ -88,6 +90,16 @@ public class MinioMultipartController {
             result.put("message", "Multipart upload aborted successfully");
             result.put("uploadId", uploadId);
             return Response.ok(result);
+        } catch (Exception e) {
+            return Response.withStatusAndMessage(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage());
+        }
+    }
+
+    @PostMapping("/initiate-presigned-url")
+    public ResponseEntity<Response<InitiateGroupResponse>> initiatePresignedUrl(
+            @RequestBody InitiatePresignedRequest request) {
+        try {
+            return Response.ok(multipartService.initiatePresignedUrl(request));
         } catch (Exception e) {
             return Response.withStatusAndMessage(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage());
         }

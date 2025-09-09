@@ -1,5 +1,7 @@
 package com.pccth.minio.dto;
 
+import java.util.List;
+
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -9,7 +11,7 @@ import lombok.Setter;
 @Setter
 @RequiredArgsConstructor
 @AllArgsConstructor
-public class PartPresignedUrl {
-    private Integer partNumber;
-    private String presignedUrl;
+public class InitiateGroupResponse {
+    private String groupId;
+    private List<InitiateUploadInfo> initiateUploadList;
 }
